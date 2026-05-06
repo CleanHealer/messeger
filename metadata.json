@@ -1,0 +1,6 @@
+{
+  "name": "ZChat",
+  "description": "Социальная сеть и мессенджер.",
+  "requestFramePermissions": ["camera", "microphone"],
+  "majorCapabilities": []
+}

@@ -1,0 +1,252 @@
+rules_version = '2';
+
+service cloud.firestore {
+  match /databases/{database}/documents {
+    
+    // Global Default Deny
+    match /{document=**} {
+      allow read, write: if false;
+    }
+
+    // Primitive Helpers
+    function isSignedIn() { return request.auth != null; }
+    function incoming() { return request.resource.data; }
+    function existing() { return resource.data; }
+    function isValidId(id) { return id is string && id.size() <= 128 && id.matches('^[a-zA-Z0-9_\\-]+$'); }
+
+    // User Model Validation
+    function isValidUser(data) {
+      return data.keys().hasAll(['email', 'displayName', 'createdAt'])
+        && data.email is string && data.email.size() <= 200
+        && data.displayName is string && data.displayName.size() <= 50
+        && data.createdAt == request.time
+        && (!('photoURL' in data) || data.photoURL == null || (data.photoURL is string && data.photoURL.size() <= 1048576))
+        && (!('statusText' in data) || data.statusText == null || (data.statusText is string && data.statusText.size() <= 100))
+        && (!('bio' in data) || data.bio == null || (data.bio is string && data.bio.size() <= 500))
+        && (!('coverPhotoURL' in data) || data.coverPhotoURL == null || (data.coverPhotoURL is string && data.coverPhotoURL.size() <= 1048576))
+        && (!('isOnline' in data) || data.isOnline == null || data.isOnline is bool)
+        && (!('lastSeen' in data) || data.lastSeen == null || data.lastSeen is timestamp)
+        && (!('preferences' in data) || data.preferences is map)
+        && (!('chatFolders' in data) || data.chatFolders is map)
+        && (!('achievements' in data) || data.achievements is list && data.achievements.size() <= 100);
+    }
+    
+    match /users/{userId} {
+      allow get: if isSignedIn();
+      allow list: if isSignedIn(); // Users can list other users in a messenger
+
+      allow create: if isSignedIn() 
+        && isValidId(userId)
+        && request.auth.uid == userId
+        && isValidUser(incoming());
+
+      allow update: if isSignedIn()
+        && request.auth.uid == userId
+        && incoming().diff(existing()).affectedKeys().hasOnly(['displayName', 'photoURL', 'isOnline', 'lastSeen', 'statusText', 'bio', 'coverPhotoURL', 'preferences', 'chatFolders', 'achievements'])
+        && (!('displayName' in incoming()) || incoming().displayName == null || (incoming().displayName is string && incoming().displayName.size() <= 50))
+        && (!('photoURL' in incoming()) || incoming().photoURL == null || (incoming().photoURL is string && incoming().photoURL.size() <= 1048576))
+        && (!('statusText' in incoming()) || incoming().statusText == null || (incoming().statusText is string && incoming().statusText.size() <= 100))
+        && (!('bio' in incoming()) || incoming().bio == null || (incoming().bio is string && incoming().bio.size() <= 500))
+        && (!('coverPhotoURL' in incoming()) || incoming().coverPhotoURL == null || (incoming().coverPhotoURL is string && incoming().coverPhotoURL.size() <= 1048576))
+        && (!('isOnline' in incoming()) || incoming().isOnline == null || incoming().isOnline is bool)
+        && (!('lastSeen' in incoming()) || incoming().lastSeen == null || incoming().lastSeen is timestamp)
+        && (!('preferences' in incoming()) || incoming().preferences is map)
+        && (!('chatFolders' in incoming()) || incoming().chatFolders is map)
+        && (!('achievements' in incoming()) || incoming().achievements is list);
+    }
+
+    // Friendship Model Validation
+    function isValidFriendship(data) {
+      return data.keys().hasAll(['users', 'status', 'requesterId', 'createdAt'])
+        && data.users is list && data.users.size() == 2
+        && data.users[0] is string && data.users[1] is string
+        && (data.status == 'pending' || data.status == 'accepted')
+        && data.requesterId == request.auth.uid
+        && data.createdAt == request.time;
+    }
+
+    match /friendships/{friendshipId} {
+      allow read: if isSignedIn() && (request.auth.uid in resource.data.users);
+      allow create: if isSignedIn()
+        && isValidId(friendshipId)
+        && request.auth.uid in incoming().users
+        && isValidFriendship(incoming());
+      
+      allow update: if isSignedIn()
+        && request.auth.uid in existing().users
+        && incoming().diff(existing()).affectedKeys().hasOnly(['status'])
+        && existing().status == 'pending'
+        && incoming().status == 'accepted';
+
+      allow delete: if isSignedIn() && (request.auth.uid in existing().users);
+    }
+
+    // Chat Model Validation
+    function isValidChat(data) {
+      return data.keys().hasAll(['type', 'members', 'createdBy', 'createdAt'])
+        && (data.type == 'direct' || data.type == 'group')
+        && data.members is list && data.members.size() >= 1 && data.members.size() <= 100
+        && data.createdBy == request.auth.uid
+        && request.auth.uid in data.members
+        && data.createdAt == request.time
+        && (!('name' in data) || (data.name is string && data.name.size() > 0 && data.name.size() <= 50))
+        && (!('typing' in data) || data.typing is map)
+        && (!('activeVoiceUsers' in data) || data.activeVoiceUsers is list);
+    }
+
+    match /chats/{chatId} {
+      allow read: if isSignedIn() && (resource == null || !('members' in resource.data) || request.auth.uid in resource.data.members);
+      allow create: if isSignedIn()
+        && isValidId(chatId)
+        && isValidChat(incoming());
+        
+      allow update: if isSignedIn()
+        && request.auth.uid in existing().members
+        && incoming().diff(existing()).affectedKeys().hasOnly(['members', 'name', 'typing', 'activeVoiceUsers'])
+        && (!('members' in incoming()) || (incoming().members is list && incoming().members.size() <= 100 && incoming().members.size() >= 1))
+        && (!('name' in incoming()) || (incoming().name is string && incoming().name.size() <= 50))
+        && (!('typing' in incoming()) || incoming().typing is map)
+        && (!('activeVoiceUsers' in incoming()) || incoming().activeVoiceUsers is list);
+    }
+
+    // Chat Message Validation
+    function isValidChatMessage(data) {
+      return data.keys().hasAll(['userId', 'createdAt'])
+        && (!('text' in data) || (data.text is string && data.text.size() <= 2000))
+        && (!('imageUrl' in data) || (data.imageUrl is string && data.imageUrl.size() <= 1048576))
+        && (!('audioUrl' in data) || (data.audioUrl is string && data.audioUrl.size() <= 1048576))
+        && (!('videoUrl' in data) || (data.videoUrl is string && data.videoUrl.size() <= 1048576))
+        && (!('fileUrl' in data) || (data.fileUrl is string && data.fileUrl.size() <= 1048576))
+        && (!('fileName' in data) || (data.fileName is string && data.fileName.size() <= 100))
+        && (!('scheduledFor' in data) || data.scheduledFor == null || data.scheduledFor is timestamp)
+        && (!('isVideoCircle' in data) || data.isVideoCircle is bool)
+        && ( ('text' in data && data.text.size() > 0) || ('imageUrl' in data) || ('audioUrl' in data) || ('videoUrl' in data) || ('fileUrl' in data) )
+        && data.userId == request.auth.uid
+        && data.createdAt == request.time
+        && (!('readBy' in data) || data.readBy is list)
+        && (!('reactions' in data) || data.reactions is map)
+        && (!('updatedAt' in data) || data.updatedAt == request.time);
+    }
+
+    match /chats/{chatId}/messages/{messageId} {
+      allow read: if isSignedIn() 
+        && (!exists(/databases/$(database)/documents/chats/$(chatId)) || !('members' in get(/databases/$(database)/documents/chats/$(chatId)).data) || request.auth.uid in get(/databases/$(database)/documents/chats/$(chatId)).data.members);
+      
+      allow create: if isSignedIn()
+        && isValidId(messageId)
+        && (!exists(/databases/$(database)/documents/chats/$(chatId)) || !('members' in get(/databases/$(database)/documents/chats/$(chatId)).data) || request.auth.uid in get(/databases/$(database)/documents/chats/$(chatId)).data.members)
+        && isValidChatMessage(incoming());
+        
+      allow update: if isSignedIn()
+        && (!exists(/databases/$(database)/documents/chats/$(chatId)) || !('members' in get(/databases/$(database)/documents/chats/$(chatId)).data) || request.auth.uid in get(/databases/$(database)/documents/chats/$(chatId)).data.members)
+        && (
+          (incoming().diff(existing()).affectedKeys().hasOnly(['readBy'])
+            && incoming().readBy is list) ||
+          (incoming().diff(existing()).affectedKeys().hasOnly(['reactions'])
+            && incoming().reactions is map) ||
+          (request.auth.uid == existing().userId
+            && incoming().diff(existing()).affectedKeys().hasOnly(['text', 'updatedAt'])
+            && incoming().text is string && incoming().text.size() > 0 && incoming().text.size() <= 2000
+            && incoming().updatedAt == request.time)
+        );
+        
+      allow delete: if isSignedIn() 
+        && (!exists(/databases/$(database)/documents/chats/$(chatId)) || !('members' in get(/databases/$(database)/documents/chats/$(chatId)).data) || request.auth.uid in get(/databases/$(database)/documents/chats/$(chatId)).data.members)
+        && existing().userId == request.auth.uid;
+    }
+
+    // Channel Model Validation
+    function isValidChannel(data) {
+      return data.keys().hasAll(['name', 'createdBy', 'createdAt'])
+        && data.name is string && data.name.size() > 0 && data.name.size() <= 50
+        && data.createdBy == request.auth.uid
+        && data.createdAt == request.time
+        && (!('description' in data) || (data.description is string && data.description.size() <= 200));
+    }
+
+    match /channels/{channelId} {
+      allow read: if isSignedIn(); 
+      allow create: if isSignedIn()
+        && isValidId(channelId)
+        && isValidChannel(incoming());
+      // For simplicity, channels cannot be updated or deleted in this initial version
+      allow update, delete: if false;
+    }
+
+    // Message Model Validation
+    function isValidMessage(data) {
+      return data.keys().hasAll(['text', 'userId', 'createdAt'])
+        && data.text is string && data.text.size() > 0 && data.text.size() <= 2000
+        && data.userId == request.auth.uid
+        && data.createdAt == request.time
+        && (!('updatedAt' in data) || data.updatedAt == request.time)
+        && (!('reactions' in data) || data.reactions is map);
+    }
+
+    match /channels/{channelId}/messages/{messageId} {
+      allow read: if isSignedIn();
+      allow create: if isSignedIn()
+        && isValidId(channelId)
+        && isValidId(messageId)
+        && exists(/databases/$(database)/documents/channels/$(channelId))
+        && isValidMessage(incoming());
+      
+      allow update: if isSignedIn() && (
+        // Action: Reactions
+        (incoming().diff(existing()).affectedKeys().hasOnly(['reactions'])
+          && incoming().reactions is map) ||
+        // Action: Edit Self Message
+        (request.auth.uid == existing().userId
+          && incoming().diff(existing()).affectedKeys().hasOnly(['text', 'updatedAt'])
+          && incoming().text is string && incoming().text.size() > 0 && incoming().text.size() <= 2000
+          && incoming().updatedAt == request.time)
+      );
+      
+      allow delete: if false;
+    }
+
+    // Post Model Validation
+    function isValidPost(data) {
+      return data.keys().hasAll(['text', 'authorId', 'createdAt'])
+        && data.text is string && data.text.size() >= 0 && data.text.size() <= 5000
+        && (data.text.size() > 0 || ('imageUrl' in data))
+        && data.authorId == request.auth.uid
+        && data.createdAt == request.time
+        && (!('imageUrl' in data) || (data.imageUrl is string && data.imageUrl.size() <= 1048576))
+        && (!('likes' in data) || data.likes is list);
+    }
+
+    match /posts/{postId} {
+      allow read: if isSignedIn();
+      allow create: if isSignedIn()
+        && isValidId(postId)
+        && isValidPost(incoming());
+        
+      allow update: if isSignedIn() && (
+        // Action: Like
+        incoming().diff(existing()).affectedKeys().hasOnly(['likes'])
+        && incoming().likes is list
+      );
+      
+      allow delete: if false;
+    }
+    
+    // Comment Model Validation
+    function isValidComment(data) {
+      return data.keys().hasAll(['text', 'authorId', 'createdAt'])
+        && data.text is string && data.text.size() > 0 && data.text.size() <= 1000
+        && data.authorId == request.auth.uid
+        && data.createdAt == request.time;
+    }
+
+    match /posts/{postId}/comments/{commentId} {
+      allow read: if isSignedIn();
+      allow create: if isSignedIn()
+        && isValidId(postId)
+        && isValidId(commentId)
+        && exists(/databases/$(database)/documents/posts/$(postId))
+        && isValidComment(incoming());
+      allow update, delete: if false;
+    }
+  }
+}

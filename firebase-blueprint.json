@@ -1,0 +1,124 @@
+{
+  "entities": {
+    "User": {
+      "title": "User Profile",
+      "description": "Public profile details for a user.",
+      "type": "object",
+      "properties": {
+        "email": { "type": "string" },
+        "displayName": { "type": "string" },
+        "photoURL": { "type": "string" },
+        "isOnline": { "type": "boolean" },
+        "createdAt": { "type": "string" }
+      },
+      "required": ["email", "displayName", "createdAt"]
+    },
+    "Friendship": {
+      "title": "Friendship",
+      "description": "Friendship status between two users.",
+      "type": "object",
+      "properties": {
+        "users": { "type": "array", "items": { "type": "string" } },
+        "status": { "type": "string", "enum": ["pending", "accepted"] },
+        "requesterId": { "type": "string" },
+        "createdAt": { "type": "string" }
+      },
+      "required": ["users", "status", "requesterId", "createdAt"]
+    },
+    "Chat": {
+      "title": "Chat",
+      "description": "A conversation between users (direct or group).",
+      "type": "object",
+      "properties": {
+        "type": { "type": "string", "enum": ["direct", "group"] },
+        "members": { "type": "array", "items": { "type": "string" } },
+        "name": { "type": "string" },
+        "createdBy": { "type": "string" },
+        "createdAt": { "type": "string" }
+      },
+      "required": ["type", "members", "createdBy", "createdAt"]
+    },
+    "ChatMessage": {
+      "title": "Chat Message",
+      "description": "A message sent within a chat.",
+      "type": "object",
+      "properties": {
+        "text": { "type": "string" },
+        "userId": { "type": "string" },
+        "reactions": { "type": "object" },
+        "imageUrl": { "type": "string" },
+        "audioUrl": { "type": "string" },
+        "fileUrl": { "type": "string" },
+        "fileName": { "type": "string" },
+        "readBy": { "type": "array", "items": { "type": "string" } },
+        "createdAt": { "type": "string" }
+      },
+      "required": ["userId", "createdAt"]
+    },
+    "Channel": {
+      "title": "Chat Channel",
+      "description": "A communication channel where messages are sent.",
+      "type": "object",
+      "properties": {
+        "name": { "type": "string" },
+        "description": { "type": "string" },
+        "createdBy": { "type": "string" },
+        "createdAt": { "type": "string" }
+      },
+      "required": ["name", "createdBy", "createdAt"]
+    },
+    "Message": {
+      "title": "Chat Message",
+      "description": "A message sent within a channel.",
+      "type": "object",
+      "properties": {
+        "text": { "type": "string" },
+        "userId": { "type": "string" },
+        "reactions": { "type": "object" },
+        "createdAt": { "type": "string" }
+      },
+      "required": ["text", "userId", "createdAt"]
+    },
+    "Post": {
+      "title": "Feed Post",
+      "description": "A post in the news feed.",
+      "type": "object",
+      "properties": {
+        "text": { "type": "string" },
+        "authorId": { "type": "string" },
+        "createdAt": { "type": "string" }
+      },
+      "required": ["text", "authorId", "createdAt"]
+    }
+  },
+  "firestore": {
+    "/users/{userId}": {
+      "schema": { "$ref": "#/entities/User" },
+      "description": "Stores user profiles."
+    },
+    "/friendships/{friendshipId}": {
+      "schema": { "$ref": "#/entities/Friendship" },
+      "description": "Stores friendship requests and connections."
+    },
+    "/chats/{chatId}": {
+      "schema": { "$ref": "#/entities/Chat" },
+      "description": "Stores chat details (direct and group)."
+    },
+    "/chats/{chatId}/messages/{messageId}": {
+      "schema": { "$ref": "#/entities/ChatMessage" },
+      "description": "Stores messages inside a chat."
+    },
+    "/channels/{channelId}": {
+      "schema": { "$ref": "#/entities/Channel" },
+      "description": "Stores all public chat channels."
+    },
+    "/channels/{channelId}/messages/{messageId}": {
+      "schema": { "$ref": "#/entities/Message" },
+      "description": "Stores messages inside a specific channel."
+    },
+    "/posts/{postId}": {
+      "schema": { "$ref": "#/entities/Post" },
+      "description": "Stores public feed posts."
+    }
+  }
+}
