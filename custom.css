@@ -1,0 +1,26 @@
+.custom-scrollbar::-webkit-scrollbar {
+  width: 6px;
+}
+.custom-scrollbar::-webkit-scrollbar-track {
+  background: transparent; 
+}
+.custom-scrollbar::-webkit-scrollbar-thumb {
+  background-color: #1F1F23; 
+  border-radius: 10px;
+}
+.custom-scrollbar:hover::-webkit-scrollbar-thumb {
+  background-color: #27272A; 
+}
+
+html.light-theme {
+  filter: invert(1) hue-rotate(180deg);
+  background-color: #f0f0ed;
+}
+
+html.light-theme img, 
+html.light-theme video,
+html.light-theme svg,
+html.light-theme [style*="background-image"],
+html.light-theme .avatar-image {
+  filter: invert(1) hue-rotate(180deg);
+}
